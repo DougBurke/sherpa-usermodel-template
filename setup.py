@@ -1,5 +1,5 @@
-# 
-#  Copyright (C) 2008  Smithsonian Astrophysical Observatory
+#
+#  Copyright (C) 2008, 2016  Smithsonian Astrophysical Observatory
 #
 #
 #  This program is free software; you can redistribute it and/or modify
@@ -23,9 +23,6 @@ import sys
 c_libs = []
 c_lib_dirs = []
 
-if platform.system() == 'SunOS':
-    c_libs.extend(['Cstd', 'sunmath'])
-
 # Pick names of file(s) off of command line
 
 c_files = ['userfuncs.cc']
@@ -42,9 +39,9 @@ while ((len(sys.argv) > 1) and (sys.argv[1].count('=') == 1) and
         c_lib_dirs = c_lib_dirs + val.split(',')
 
 setup(name='userfuncs',
-      version='1.0.0',
-      author='Stephen Doe',
-      author_email='sdoe@cfa.harvard.edu',
+      version='1.1.0',
+      author='Chandra X-ray Center',
+      # author_email='@cfa.harvard.edu',
       ext_modules=[Extension('userfuncs',
                              c_files,
                              library_dirs=c_lib_dirs,

@@ -1,0 +1,172 @@
+This file contains instructions for building and running the example
+code that adds a Fortran function to a Sherpa user model.
+
+The relevant files are:
+
+demo_f_model.py		Example session reading simple data file,
+			defining user model, and overplotting data
+			and model.
+
+fwrap.py		Python wrapper function around Fortran
+			function.
+
+f_line.f		Fortran function implementing equation for a
+			line, y = mx + b.
+
+Instructions:
+
+1)  Ensure Fortran and C compilers can be found.
+
+    The first step is to ensure that the right versions of the Fortran
+    and C compilers are found.  If you built CIAO from source, you
+    will use the same compilers you used to build CIAO.
+
+    If you installed a binary build of CIAO, you need to look up which
+    version of the compilers were used for that binary build.  For
+    example, the Linux FC4 build was built with GCC 3.4.5.  So, if you
+    do
+
+    % gcc -v
+    % g77 -v 
+
+    and the version is 3.4.5, that's fine.  But if 3.4.5 is not in
+    your PATH, you either need to add that directory to your path, or
+    set F77 and CC environment variables.
+
+    Suppose GCC 3.4.5 is installed in /usr/local/bin, and that
+    directory is not in your PATH.  Set the variables:
+
+    % setenv F77 /usr/local/bin/g77
+    % setenv CC /usr/local/bin/gcc
+
+2)  Use f2py to generate the extension module.
+
+    The CIAO installation should have f2py installed, in the same
+    directory with the CIAO installed version of Python.  f2py is a
+    tool that can compile your Fortran source code and generate the
+    extension module that allows it to be called from Python.
+
+    For example, consider the included example Fortran file,
+    f_line.f.  To generate an extension module using f2py, run this
+    command at the Unix prompt:
+
+    % f2py -m f_line -c f_line.f
+
+    The -c flag compiles the Fortran code and generates the extension
+    module.  The -m flag names the module "f_line"; the end result is
+    an extension module called "f_line.so" in the current working
+    directory.
+
+    With the CIAO 4.1 version  of the user model, you must also tell
+    f2py where the CIAO version of the shared Python library can be
+    found (along with the readline library, which is a dependency).
+    This can be done by passing f2py the path to the library, and the
+    name of the library, with -L and -l arguments respectively.
+
+    In CIAO the location of the CIAO installation is indicated with
+    the ASCDS_INSTALL environment variable.  Therefore, you should run
+    f2py like this (all one line):
+
+    % f2py -m f_line -c f_line.f -L${ASCDS_INSTALL}/ots/lib -lpython2.5
+    -lreadline -lncurses
+
+    (The version of Python we ship is Python 2.5.2.  The libraries
+    readline and ncurses are needed by our build of Python, for most
+    systems, and these libraries are also packaged in
+    ${ASCDS_INSTALL}/ots/lib.  On Solaris, you may need to replace
+    "-lncurses" with "-ltermcap".)
+
+    (When compiling your Fortran code, you can use the Fortran
+    compiler you wish.  More than likely, for your build of CIAO, g95
+    was used to compile certain Fortran CIAO modules that are part of
+    the base CIAO installation.  But you can still use g77 to compile
+    *your* Fortran code, if you wish.  f2py takes care of calling
+    *your* compiler, and finding needed Fortran libraries, when you
+    create this user model module.  And when this module is imported
+    into Python, Python takes care of dynamically linking to the g77
+    library needed to run this module code.)
+
+  a)  External User Libraries
+
+      If you have external libraries you need to link to, you can also
+      add them to the link line you send to f2py.  Above, you have
+      already sent the path to the Python shared library; you can
+      supply other libraries via the command line.
+
+      Suppose, for example, you have a library of utility functions
+      your code will call, and the library is called "libmy_utils.so",
+      and it is in the directory "/home/me/lib".  Your code calls
+      functions defined in this library.  But you don't need to
+      compile this code; you just need to find it when creating your
+      user module.
+
+      All you need do is to add the extra path and library name to the
+      command line, using f2py:
+
+      % f2py -m f_line -c f_line.f -L/home/me/lib -lmy_utils -L${ASCDS_INSTALL}/ots/lib -lpython2.5 -lreadline -lncurses
+
+      (This call needs to be all on one line.)
+
+3)  Write a Python wrapper for the user function.
+
+    The function in f_line.f does not contain the parameter array and
+    x-array in the order that Sherpa models expect.  This can be
+    easily addressed by writing a Python wrapper function, that
+    accepts these arguments in the correct order.
+
+    In the included example, a wrapper function is contained in the
+    file fwrap.py.  In its entirety, the code listed here is:
+
+      import numpy
+      import f_line
+
+      def wrap_fline(pars, x):
+          y = numpy.zeros(x.shape, type(x[0]))
+          f_line.f_line(pars, x, y, len(x))
+          return y
+
+    The function wrap_fline does several things:
+
+    . Accepts pars, x in the order Sherpa expects
+
+    . Creates an output y-array -- for a 1-D function, y and x are of
+      the same size, shape and data type.
+
+    . Calls the Fortran function imported by the "f_line" module.
+
+    The function defined here, "wrap_fline", is the one to be added to
+    the Sherpa user model.
+
+4)  Add the user function to a user model.
+
+    The demo script included, demo_f_model.py, demonstrates the use
+    of a user model containing a Fortran function.  The whole script
+    can be run from the Unix prompt:
+
+    % python
+    >>> execfile("demo_f_model.py")
+
+    The execfile function executes the code in demo_f_model.py; the
+    Python session is still running so that the user may continue with
+    interactive commands (e.g., change the value of one of the model
+    parameters, and call plot_fit again to see the updated values
+    generated with the user model).
+
+    The most relevant lines in this file are:
+
+      import fwrap
+
+      load_user_model(fwrap.wrap_fline, "wrap_fline")
+      add_user_pars("wrap_fline", ["m","b"])
+
+      set_model(1, wrap_fline)
+
+    The wrapper function is imported (which in turn imports the
+    Fortran extension module).  The user model is created, with a
+    reference to the wrapper function.  Parameters ["m","b"] are added
+    to the user model.  Finally, the user model is assigned to be the
+    model fit to data set 1.
+
+The user can add an arbitrary number of Fortran functions to the
+extension module the user creates, and access them all in a single
+Python session.

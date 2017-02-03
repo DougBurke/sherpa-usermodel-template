@@ -18,43 +18,15 @@ userfuncs.cc		File listing function prototypes for all user
                         functions (user needs to add user function
                         prototypes here).
 
-There are also two interface files--array.hh and glue.hh--that need to
-be present, but that the user need NEVER touch or look at.  (These
-contain copies of Python/C interface functions that Sherpa uses to
-pass arrays from Python to Sherpa C functions.  The user should never
-need to modify this code.)
+There are also two interface files, array.hh and glue.hh, that
+are used to provide the interface to Sherpa. The idea is that
+you should not need to change anything in these files, but
+at present (CIAO 4.9) you may need to adjust the glue.hh file if
+you are building a two-dimensional user model.
 
 Instructions:
 
-1)  Ensure C and C++ compilers can be found.
-
-    The first step is to ensure that the right versions of the C and
-    C++ compilers are found.  If you built CIAO from source, you will
-    use the same compilers you used to build CIAO.
-
-    If you installed a binary build of CIAO, you need to look up which
-    version of the compilers were used for that binary build.  For
-    example, the Linux FC4 build was built with GCC 3.4.5.  So, if you
-    do
-
-    % gcc -v
-    % g++ -v 
-
-    and the version is 3.4.5, that's fine.  But if 3.4.5 is not in
-    your PATH, you either need to add that directory to your path, or
-    set CC and CXX environment variables.
-
-    For example, suppose GCC 3.4.5 is installed in /usr/local/bin, and
-    that directory is not in your PATH.  Set the variables:
-
-    % setenv CC /usr/local/bin/gcc
-    % setenv CXX /usr/local/bin/g++
-
-    When these environment variables are set, then the Python setup.py
-    file included in this tar file will find these compilers.  Use of
-    the setup.py file is discussed in section 3) below.
-
-2)  Add C user function prototypes to userfuncs.cc file.
+1)  Add C user function prototypes to userfuncs.cc file.
 
     This file lists all C functions to be added to the userfuncs
     module.  All the user has to do is to add their function
@@ -92,7 +64,10 @@ Instructions:
       But, since in this example we are only interested in the
       unbinned form, the binned form, c_line_int, does nothing.
       Nevertheless, the function must be present, so that its function
-      prototype can be listed in userfuncs.cc.   
+      prototype can be listed in userfuncs.cc.
+
+      The "binned" form must have the same name as the unbinned
+      version with a suffix of _int.
 
     . Since it is plain C code, the function prototypes must be
       enclosed in a block:
@@ -193,14 +168,18 @@ Instructions:
     directory.  This is where the userfuncs module was installed.  To
     import the module, Python needs to be told where it is.
 
-    If the user sourced the CIAO setup file, PYTHONPATH is already set
-    to point to CIAO Python modules.  Add the current working
-    directory to PYTHONPATH:
+    Add the current working directory to PYTHONPATH using either
 
-    % setenv PYTHONPATH ${PYTHONPATH}:${PWD}/lib/python2.5/site-packages
+    % setenv PYTHONPATH ${PYTHONPATH}:${PWD}/lib/python2.7/site-packages
 
+    or
+    
+    % setenv PYTHONPATH ${PWD}/lib/python2.7/site-packages
+
+    depending whether PYTHONPATH is already set or not.
+    
     If the user installed the userfuncs module in a different
-    directory, that path should be added to PYTHONPATH.
+    directory, that path should be added to PYTHONPATH instead.
 
 5)  Add the user function to a user model.
 

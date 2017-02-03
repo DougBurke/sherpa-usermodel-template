@@ -1,5 +1,5 @@
 // 
-//  Copyright (C) 2008  Smithsonian Astrophysical Observatory
+//  Copyright (C) 2008, 2016  Smithsonian Astrophysical Observatory
 //
 //
 //  This program is free software; you can redistribute it and/or modify
@@ -59,11 +59,5 @@ static PyMethodDef UserFuncs[] = {
   
 };
 
-
-PyMODINIT_FUNC
-inituserfuncs(void)
-{ 
-  import_array();
-  
-  Py_InitModule( (char*)"userfuncs", UserFuncs );
-}
+/*** set up the model initialization code ***/
+SHERPAMOD(userfuncs, UserFuncs)

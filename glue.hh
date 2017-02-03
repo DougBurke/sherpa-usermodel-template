@@ -1,5 +1,5 @@
 // 
-//  Copyright (C) 2008  Smithsonian Astrophysical Observatory
+//  Copyright (C) 2008, 2016  Smithsonian Astrophysical Observatory
 //
 //
 //  This program is free software; you can redistribute it and/or modify
@@ -17,6 +17,11 @@
 //  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 //
 
+#ifndef __sherpa_usermodel_glue_hh__
+#define __sherpa_usermodel_glue_hh__
+
+#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
+
 #include <Python.h>
 #include <numpy/arrayobject.h>
 #include "array.hh"
@@ -24,6 +29,122 @@
 #include <cmath>
 #include <cfloat>
 
+// The following is taken from Sherpa's sherpa/include/sherpa/extension.hh
+//
+typedef sherpa::Array< double, NPY_DOUBLE > DoubleArray;
+
+typedef int (*converter)( PyObject*, void* );
+
+#define CONVERTME(arg) ((converter) sherpa::convert_to_contig_array<arg>)
+
+#if PY_MAJOR_VERSION >= 3
+#define PY3
+#endif
+
+#ifdef PY3
+
+#define SHERPAMOD(name, fctlist) \
+static struct PyModuleDef module##name = {\
+PyModuleDef_HEAD_INIT, \
+#name, \
+NULL, \
+-1, \
+fctlist \
+}; \
+\
+PyMODINIT_FUNC PyInit_##name(void) { \
+  import_array(); \
+  return PyModule_Create(&module##name); \
+}
+
+#else
+
+#define SHERPAMOD(name, fctlist) \
+PyMODINIT_FUNC init##name(void);\
+PyMODINIT_FUNC \
+init##name(void) \
+{ \
+  import_array(); \
+  Py_InitModule( (char*)#name, fctlist ); \
+}
+
+#endif
+
+// end of extension.hh
+
+
+namespace usermodel {
+
+  // This is the fct1d template specialized to double arrays,
+  // since this is the simplest way to get it to work with a
+  // recent gcc.
+  //
+template <npy_intp NumPars,
+	  int (*PtFunc)( const double* p, const double* x, 
+                         const int xsize, double* out, 
+                         const int outsize ),
+	  int (*IntFunc)( const double* p, const double* xlo, 
+                          const int xlosize, const double* xhi,
+                          const int xhisize, double* out, 
+                          const int outsize )>
+PyObject* fct1d_dbl( PyObject* self, PyObject* args )
+{
+  
+  DoubleArray p;
+  DoubleArray xlo;
+  DoubleArray xhi;
+
+  if( !PyArg_ParseTuple( args, (char*)"O&O&|O&",
+			 CONVERTME( DoubleArray ), &p,
+			 CONVERTME( DoubleArray ), &xlo,
+			 CONVERTME( DoubleArray ), &xhi ) )
+    return NULL;  
+    
+  npy_intp npars = p.get_size();
+  
+  if ( NumPars != npars ) {
+    PyErr_Format( PyExc_TypeError, (char*)"expected %ld parameters, got %ld",
+		  long( NumPars ), long( npars ) );
+    return NULL;
+  }
+  
+  npy_intp nelem = xlo.get_size();
+  
+  if ( xhi && ( xhi.get_size() != nelem ) ) {
+      PyErr_SetString( PyExc_TypeError,
+                       (char*)"input array sizes do not match" );
+      return NULL;
+  }
+  
+  DoubleArray result;
+  if ( EXIT_SUCCESS != result.create( xlo.get_ndim(), xlo.get_dims() ) )
+    return NULL;
+  
+  const double* pars = ( const_cast< double* >( &p[0] ) );
+  const double* xlo_arr = ( const_cast< double* >( &xlo[0] ) );
+  const double* xhi_arr = NULL;
+  if (xhi) {
+    xhi_arr = ( const_cast< double* >( &xhi[0] ) );
+  }
+  double* result_arr = ( const_cast< double* >( &result[0] ) );
+  
+  if ( !xhi ) {
+    if (PtFunc( pars, xlo_arr, nelem, result_arr, nelem ) != EXIT_SUCCESS)
+      return NULL;
+  }
+  else {
+    if (IntFunc( pars, xlo_arr, nelem, xhi_arr, nelem, 
+		 result_arr, nelem ) != EXIT_SUCCESS)
+      return NULL;
+  }
+
+  return result.return_new_ref();
+  
+}
+
+  // This is the original template used by the usermodel code.
+  // It is currently unused.
+  //
 template <typename ArrayType,
 	  typename DataType,
 	  npy_intp NumPars,
@@ -34,7 +155,7 @@ template <typename ArrayType,
 			       const npy_intp xlosize, const DataType* xhi,
 			       const npy_intp xhisize, DataType* out, 
 			       const npy_intp outsize )>
-PyObject* user_fct1d( PyObject* self, PyObject* args )
+PyObject* fct1d( PyObject* self, PyObject* args )
 {
   
   ArrayType p;
@@ -89,6 +210,9 @@ PyObject* user_fct1d( PyObject* self, PyObject* args )
   
 }
 
+  // To use the 2D template probably requires a specialization
+  // to the double type, as done above with fct1d_dbl / fct1d.
+  //
 template <typename ArrayType,
 	  typename DataType,
 	  npy_intp NumPars,
@@ -102,7 +226,7 @@ template <typename ArrayType,
 			       const npy_intp x1losize, const DataType* x1hi,
 			       const npy_intp x1hisize, DataType* out, 
 			       const npy_intp outsize )>
-PyObject* user_fct2d( PyObject* self, PyObject* args )
+PyObject* fct2d( PyObject* self, PyObject* args )
 {
   
   ArrayType p;
@@ -175,13 +299,39 @@ PyObject* user_fct2d( PyObject* self, PyObject* args )
   
 }
 
+} // namespace usermodel
+
 #define FCTSPEC(name, func) \
   { (char*)#name, (PyCFunction)func, METH_VARARGS, NULL }
 
-#define _USERMODELFCTSPEC(ptfunc, ftype, npars)	\
-  FCTSPEC(ptfunc, (ftype< DoubleArray, double, npars, ptfunc, ptfunc##_int >))
+/***
+#define _MODELFCTPTR(name) \
+  name< double, DoubleArray >
+
+#define _USERMODELFCTSPEC(ptfunc, ftype, npars)       \
+  FCTSPEC(ptfunc, (ftype< DoubleArray, double, npars,        \
+                   _MODELFCTPTR(ptfunc),             \
+                   _MODELFCTPTR(ptfunc##_int)         \
+                   >))
+***/
+
+#define _MODELFCTPTR(name) name
+
+#define _USERMODELFCTSPEC(ptfunc, ftype, npars)       \
+  FCTSPEC(ptfunc, (ftype< npars,        \
+                   _MODELFCTPTR(ptfunc),             \
+                   _MODELFCTPTR(ptfunc##_int)         \
+                   >))
 
 #define USERMODELFCT1D(ptfunc, npars) \
-  _USERMODELFCTSPEC(ptfunc, user_fct1d, npars)
+  _USERMODELFCTSPEC(ptfunc, usermodel::fct1d_dbl, npars)
+
+/***
+
+To use this you will probably need to create a fct2d_dbl version.
+
 #define USERMODELFCT2D(ptfunc, npars) \
-  _USERMODELFCTSPEC(ptfunc, user_fct2d, npars)
+  _USERMODELFCTSPEC(ptfunc, usermodel::fct2d, npars)
+***/
+
+#endif /* __sherpa_usermodel_glue_hh__ */
